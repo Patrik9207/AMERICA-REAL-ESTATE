@@ -50,9 +50,6 @@ Não fazem parte do escopo ações comuns, ETFs, criptomoedas ou outros ativos.
 - [Tailwind CSS](https://tailwindcss.com/)
 - [Recharts](https://recharts.org/)
 
-## Getting Started
-
-First, install the dependencies:
 
 ```bash
 npm install
