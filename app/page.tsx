@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import {
   ArrowUpRight,
   Building2,
@@ -7,61 +11,183 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-const reitSymbols = [
-  "AAT", "ABR", "ADC", "AIV", "AJR", "AMT", "APLE", "APTS", "ARE", "ARI",
-  "AVB", "BDN", "BHR", "BIP", "BRE", "BXP", "CPT", "CTRE", "CXW", "DEI",
-  "DLR", "DOC", "EPR", "EQIX", "ESS", "EXR", "FRT", "GEO", "GLPI", "GNL",
-  "GPC", "HASI", "HCP", "HST", "HTA", "IIPR", "IRM", "KIM", "KRC", "LAMR",
-  "LADR", "LTC", "LXP", "MAA", "MFA", "MGP", "MITT", "MPW", "MRT", "NNN",
-  "NHI", "O", "OHI", "PEI", "PLD", "PSA", "PVD", "RAI", "RCI", "REG",
-  "RHP", "ROIC", "SUI", "TRNO", "TSI", "UMH", "VNO", "VTR", "WELL", "WPC",
-  "WRB", "XAN", "XHR", "YELP", "A", "ACC", "ALX", "AMH", "AWH", "BFS",
-  "BRX", "BXP", "CBO", "CIM", "CIR", "CUBE", "DKL", "DNO", "DRH", "EFC",
-  "ELM", "ESI", "FF", "FOA", "FR", "GATX", "GME", "HPP", "HPT", "HUBB",
-  "INTC", "JLL", "KRG", "LII", "LOV", "MHC", "MNR", "NSA", "NWN", "NWS",
-  "PK", "PLY", "PNE", "RDF", "RWT", "SBS", "SMG", "SPG", "SRC", "STOR",
-  "TCO", "TWO", "UDR", "VICI", "WRI", "WTS", "XL", "Y", "ZBH"
-];
-
-const sectorPool = [
-  "Residential",
-  "Industrial",
-  "Retail",
-  "Healthcare",
-  "Office",
-  "Self-storage",
-  "Data centers",
-  "Diversified",
-];
-
-const reitData = reitSymbols.map((symbol, index) => {
-  const baseFfo = 2.2 + (index % 10) * 0.45 + (index % 4) * 0.18;
-
-  return {
-    symbol,
-    sector: sectorPool[index % sectorPool.length],
-    price: (28 + ((index * 7) % 120)).toFixed(2),
-    dividend: (3 + ((index * 13) % 7) / 10).toFixed(2),
-    occupancy: 86 + ((index * 17) % 13),
-    change: ((index % 9) - 4) / 2,
-    ffoAnnual: [
-      (baseFfo - 0.5).toFixed(2),
-      (baseFfo - 0.28).toFixed(2),
-      (baseFfo - 0.11).toFixed(2),
-      (baseFfo + 0.09).toFixed(2),
-      (baseFfo + 0.22).toFixed(2),
-    ],
-  };
-});
+type ReitRow = {
+  symbol: string;
+  name: string;
+  sector: string;
+  price: number | null;
+  marketValue: number | null;
+  liquidityAverage: number | null;
+  dividendYield: number | null;
+  dividendAnnual: Array<number | null>;
+  occupancy: number | null;
+  debtToAssets: number | null;
+  change: number | null;
+  ffoAnnual: Array<number | null>;
+  ffoLatest: number | null;
+};
 
 const stats = [
-  { label: "REITs listados", value: `${reitData.length}`, icon: Building2, delta: "+12.4%" },
-  { label: "Yield médio", value: "4.6%", icon: TrendingUp, delta: "+0.3%" },
-  { label: "Valor do portfólio", value: "$1.48T", icon: CircleDollarSign, delta: "+7.9%" },
-  { label: "Ocupação média", value: "94.1%", icon: MapPinned, delta: "+1.2%" },
+  { label: "REITs listados", value: "0", icon: Building2, delta: "—" },
+  { label: "Yield médio", value: "—", icon: TrendingUp, delta: "—" },
+  { label: "Liquidez média", value: "—", icon: CircleDollarSign, delta: "—" },
+  { label: "Ocupação média", value: "—", icon: MapPinned, delta: "—" },
 ];
 
+function formatMetric(value: number | null, suffix = "") {
+  if (value === null || Number.isNaN(value)) return "N/D";
+  return `${value.toFixed(2)}${suffix}`;
+}
+
+function averageMetric(values: Array<number | null>) {
+  const available = values.filter((value): value is number => value !== null && Number.isFinite(value));
+  if (!available.length) return null;
+  return available.reduce((sum, value) => sum + value, 0) / available.length;
+}
+
+const annualYears = [2022, 2023, 2024, 2025, 2026];
+type SortKey =
+  | "symbol"
+  | "sector"
+  | "price"
+  | "marketValue"
+  | "liquidityAverage"
+  | "dividendYield"
+  | "occupancy"
+  | "debtToAssets"
+  | "change"
+  | `ffo-${number}`
+  | `div-${number}`;
+type SortDirection = "asc" | "desc";
+
 function Page() {
+  const [rows, setRows] = useState<ReitRow[]>([]);
+  const [selectedSector, setSelectedSector] = useState("Todos");
+  const [sortKey, setSortKey] = useState<SortKey>("symbol");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [loading, setLoading] = useState(true);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortKey(key);
+    setSortDirection("asc");
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const response = await fetch("/api/reits");
+        if (!response.ok) throw new Error("Não foi possível carregar os dados de mercado.");
+
+        const marketRows: ReitRow[] = await response.json();
+        setRows(marketRows);
+        setLoading(false);
+
+        try {
+          const fundamentalsResponse = await fetch("/api/reits?fundamentals=1");
+          if (!fundamentalsResponse.ok) return;
+
+          const fundamentalsRows: Array<Pick<ReitRow, "symbol" | "occupancy" | "debtToAssets" | "ffoAnnual">> =
+            await fundamentalsResponse.json();
+          const fundamentalsBySymbol = new Map<string, Partial<ReitRow>>();
+
+          fundamentalsRows.forEach((item) => fundamentalsBySymbol.set(item.symbol, item));
+          setRows((currentRows) =>
+            currentRows.map((item) => ({
+              ...item,
+              ...fundamentalsBySymbol.get(item.symbol) ?? {},
+            })),
+          );
+        } catch {
+          // Market data stays visible if fundamentals are unavailable.
+        }
+      } catch {
+        setRows([]);
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, []);
+
+  const sectors = ["Todos", ...Array.from(new Set(rows.map((item) => item.sector).filter(Boolean)))];
+
+  const visibleReits = useMemo(() => {
+    const filtered =
+      selectedSector === "Todos" ? [...rows] : rows.filter((item) => item.sector === selectedSector);
+
+    return [...filtered].sort((a, b) => {
+      const getValue = (row: ReitRow): number | string | null => {
+        if (sortKey === "symbol" || sortKey === "sector") return row[sortKey];
+        if (sortKey === "price" || sortKey === "marketValue" || sortKey === "liquidityAverage" || sortKey === "dividendYield" || sortKey === "occupancy" || sortKey === "debtToAssets" || sortKey === "change") {
+          return row[sortKey];
+        }
+        if (sortKey.startsWith("ffo-")) return row.ffoAnnual[Number(sortKey.slice(4))] ?? null;
+        return row.dividendAnnual[Number(sortKey.slice(4))] ?? null;
+      };
+
+      const left = getValue(a);
+      const right = getValue(b);
+      let result = 0;
+
+      if (left === null && right !== null) result = 1;
+      else if (left !== null && right === null) result = -1;
+      else if (typeof left === "string" && typeof right === "string") result = left.localeCompare(right);
+      else result = Number(left ?? 0) - Number(right ?? 0);
+
+      return sortDirection === "asc" ? result : -result;
+    });
+  }, [rows, selectedSector, sortDirection, sortKey]);
+
+  const averageYield = averageMetric(rows.map((item) => item.dividendYield));
+  const averageLiquidity = averageMetric(rows.map((item) => item.liquidityAverage));
+  const averageOccupancy = averageMetric(rows.map((item) => item.occupancy));
+
+  const formatCurrencyMetric = (value: number | null) => {
+    if (value === null || Number.isNaN(value)) return "N/D";
+    return `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  };
+
+  const statValues = [
+    { label: "REITs listados", value: `${rows.length}`, icon: Building2, delta: rows.length ? "+" : "—" },
+    { label: "Yield médio", value: formatMetric(averageYield, "%"), icon: TrendingUp, delta: "—" },
+    { label: "Liquidez média", value: formatCurrencyMetric(averageLiquidity), icon: CircleDollarSign, delta: "—" },
+    { label: "Ocupação média", value: formatMetric(averageOccupancy, "%"), icon: MapPinned, delta: "—" },
+  ];
+
+  const exportToExcel = () => {
+    if (!rows.length) return;
+
+    const exportRows = rows.map((reit) => {
+      const row: Record<string, number | string | null> = {
+        Ticker: reit.symbol,
+        Setor: reit.sector || "N/D",
+        Preço: reit.price ?? null,
+        "Valor de mercado": reit.marketValue ?? null,
+        "Liquidez média/dia": reit.liquidityAverage ?? null,
+        "Dividend yield": reit.dividendYield ?? null,
+        Ocupação: reit.occupancy ?? null,
+        "Dívida/Ativo": reit.debtToAssets ?? null,
+      };
+
+      annualYears.forEach((year) => {
+        row[`FFO/Ação ${year}`] = reit.ffoAnnual[year - 2022] ?? null;
+        row[`Dividendos/Ação ${year}`] = reit.dividendAnnual[year - 2022] ?? null;
+      });
+
+      return row;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "REITs");
+    XLSX.writeFile(workbook, "america-real-estate-reits.xlsx");
+  };
+
   return (
     <main className="page-shell py-6 md:py-8">
       <div className="reveal">
@@ -82,14 +208,19 @@ function Page() {
             <a href="#filtros">Filtros</a>
           </div>
 
-          <button className="inline-flex items-center gap-2 rounded-full border border-[rgba(197,243,107,0.38)] bg-[rgba(197,243,107,0.08)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#c5f36b]">
+          <button
+            type="button"
+            onClick={exportToExcel}
+            disabled={!rows.length}
+            className="inline-flex items-center gap-2 rounded-full border border-[rgba(197,243,107,0.38)] bg-[rgba(197,243,107,0.08)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#c5f36b] disabled:cursor-not-allowed disabled:opacity-50"
+          >
             Exportar
             <ArrowUpRight className="h-3.5 w-3.5" />
           </button>
         </header>
 
         <section id="estatisticas" className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {stats.map(({ label, value, delta, icon: Icon }) => (
+          {statValues.map(({ label, value, delta, icon: Icon }) => (
             <div key={label} className="panel p-4">
               <div className="mb-4 flex items-center justify-between">
                 <span className="eyebrow">{label}</span>
@@ -107,7 +238,7 @@ function Page() {
         </section>
 
         <section id="lista" className="panel p-4 md:p-5">
-          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="eyebrow mb-1">Listagem de REITs</div>
               <h1 className="text-2xl font-semibold text-[#f5f7f2] md:text-3xl">
@@ -115,63 +246,106 @@ function Page() {
               </h1>
             </div>
 
-            <div id="filtros" className="flex items-center gap-2 rounded-full border border-[#2b3027] bg-[#121810] px-3 py-2 text-sm text-[#dfe4d9]">
-              <Filter className="h-4 w-4 text-[#c5f36b]" />
-              Filtro por setor
+            <div id="filtros" className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2 rounded-full border border-[#2b3027] bg-[#121810] px-3 py-2 text-sm text-[#dfe4d9]">
+                <Filter className="h-4 w-4 text-[#c5f36b]" />
+                <span>Setor</span>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {sectors.map((sector) => (
+                  <button
+                    key={sector}
+                    type="button"
+                    onClick={() => setSelectedSector(sector)}
+                    className={
+                      sector === selectedSector
+                        ? "rounded-full border border-[#c5f36b] bg-[rgba(197,243,107,0.12)] px-3 py-1.5 text-xs font-medium text-[#c5f36b]"
+                        : "rounded-full border border-[#2b3027] bg-[#121810] px-3 py-1.5 text-xs text-[#dfe4d9]"
+                    }
+                  >
+                    {sector}
+                  </button>
+                ))}
+              </div>
+
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full border-separate border-spacing-y-2 text-left">
-              <thead>
-                <tr className="text-xs uppercase tracking-[0.14em] text-[#92978f]">
-                  <th className="pb-2 pl-3 pr-4 font-medium">Ticker</th>
-                  <th className="pb-2 px-4 font-medium">Setor</th>
-                  <th className="pb-2 px-4 font-medium">Preço</th>
-                  <th className="pb-2 px-4 font-medium">Dividend yield</th>
-                  <th className="pb-2 px-4 font-medium">Ocupação</th>
-                  <th className="pb-2 px-4 font-medium">FFO / Ação</th>
-                  <th className="pb-2 px-4 font-medium">1M</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reitData.map((reit) => (
-                  <tr key={reit.symbol} className="rounded-2xl border border-[#2b3027] bg-[#121810] text-sm text-[#dfe4d9]">
-                    <td className="rounded-l-2xl border-y border-l border-[#2b3027] px-3 py-3 font-semibold text-[#f5f7f2]">
-                      {reit.symbol}
-                    </td>
-                    <td className="border-y border-[#2b3027] px-4 py-3">{reit.sector}</td>
-                    <td className="border-y border-[#2b3027] px-4 py-3">${reit.price}</td>
-                    <td className="border-y border-[#2b3027] px-4 py-3 text-[#c5f36b]">{reit.dividend}%</td>
-                    <td className="border-y border-[#2b3027] px-4 py-3">{reit.occupancy}%</td>
-                    <td className="border-y border-[#2b3027] px-4 py-3">
-                      <div className="flex flex-col gap-1 text-[11px] text-[#dfe4d9]">
-                        {reit.ffoAnnual.map((value, index) => (
-                          <span key={`${reit.symbol}-ffo-${index}`} className="flex items-center justify-between gap-2">
-                            <span className="text-[#92978f]">{2022 + index}</span>
-                            <span className="font-medium text-[#f5f7f2]">${value}</span>
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="rounded-r-2xl border-y border-r border-[#2b3027] px-4 py-3">
-                      <span
-                        className={
-                          reit.change >= 0
-                            ? "inline-flex items-center gap-1 text-[#9adf69]"
-                            : "inline-flex items-center gap-1 text-[#ff8b72]"
-                        }
-                      >
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                        {reit.change >= 0 ? "+" : ""}
-                        {reit.change.toFixed(1)}%
-                      </span>
-                    </td>
+          {loading ? (
+            <div className="py-10 text-center text-sm text-[#a0a79d]">Carregando dados públicos...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-separate border-spacing-y-2 text-left">
+                <thead>
+                  <tr className="text-xs uppercase tracking-[0.14em] text-[#92978f]">
+                    {(["symbol", "sector", "price", "marketValue", "liquidityAverage", "dividendYield", "occupancy", "debtToAssets"] as SortKey[]).map((key, index) => {
+                      const labels = ["Ticker", "Setor", "Preço", "Valor de mercado", "Liquidez média/dia", "Dividend yield", "Ocupação", "Dívida/Ativo"];
+
+                      return (
+                        <th key={key} className={`${index === 0 ? "pl-3 pr-4" : "px-4"} pb-2 font-medium`}>
+                          <button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 whitespace-nowrap">
+                            {labels[index]}
+                            <span aria-hidden="true">{sortKey === key ? (sortDirection === "asc" ? "↑" : "↓") : "↕"}</span>
+                          </button>
+                        </th>
+                      );
+                    })}
+                    {annualYears.map((year) => (
+                      <th key={year} className="pb-2 px-3 font-medium">
+                        <button type="button" onClick={() => toggleSort(`ffo-${year - 2022}`)} className="inline-flex items-center gap-1 whitespace-nowrap">
+                          FFO/Ação {year}
+                          <span aria-hidden="true">{sortKey === `ffo-${year - 2022}` ? (sortDirection === "asc" ? "↑" : "↓") : "↕"}</span>
+                        </button>
+                      </th>
+                    ))}
+                    {annualYears.map((year) => (
+                      <th key={`div-${year}`} className="pb-2 px-3 font-medium">
+                        <button type="button" onClick={() => toggleSort(`div-${year - 2022}`)} className="inline-flex items-center gap-1 whitespace-nowrap">
+                          Dividendos/Ação {year}
+                          <span aria-hidden="true">{sortKey === `div-${year - 2022}` ? (sortDirection === "asc" ? "↑" : "↓") : "↕"}</span>
+                        </button>
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {visibleReits.map((reit) => (
+                    <tr key={reit.symbol} className="rounded-2xl border border-[#2b3027] bg-[#121810] text-sm text-[#dfe4d9]">
+                      <td className="rounded-l-2xl border-y border-l border-[#2b3027] px-3 py-3 font-semibold text-[#f5f7f2]">
+                        {reit.symbol}
+                      </td>
+                      <td className="border-y border-[#2b3027] px-4 py-3">{reit.sector || "N/D"}</td>
+                      <td className="border-y border-[#2b3027] px-4 py-3">{reit.price === null ? "N/D" : `$${reit.price.toFixed(2)}`}</td>
+                      <td className="border-y border-[#2b3027] px-4 py-3">{reit.marketValue === null ? "N/D" : `$${reit.marketValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</td>
+                      <td className="border-y border-[#2b3027] px-4 py-3">{reit.liquidityAverage === null ? "N/D" : `$${reit.liquidityAverage.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}</td>
+                      <td className="border-y border-[#2b3027] px-4 py-3 text-[#c5f36b]">{reit.dividendYield === null ? "N/D" : `${reit.dividendYield.toFixed(2)}%`}</td>
+                      <td className="border-y border-[#2b3027] px-4 py-3">{reit.occupancy === null ? "N/D" : `${reit.occupancy.toFixed(1)}%`}</td>
+                      <td className="border-y border-[#2b3027] px-4 py-3">{reit.debtToAssets === null ? "N/D" : `${reit.debtToAssets.toFixed(1)}%`}</td>
+                      {annualYears.map((year) => {
+                        const value = reit.ffoAnnual[year - 2022];
+
+                        return (
+                          <td key={`${reit.symbol}-${year}`} className="border-y border-[#2b3027] px-3 py-3 text-center">
+                            {value === null || value === undefined ? "N/D" : `$${value.toFixed(2)}`}
+                          </td>
+                        );
+                      })}
+                      {annualYears.map((year) => {
+                        const value = reit.dividendAnnual[year - 2022];
+
+                        return (
+                          <td key={`${reit.symbol}-div-${year}`} className={`${year === 2026 ? "rounded-r-2xl border-r " : ""}border-y border-[#2b3027] px-3 py-3 text-center`}>
+                            {value === null || value === undefined ? "N/D" : `$${value.toFixed(2)}`}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       </div>
     </main>
