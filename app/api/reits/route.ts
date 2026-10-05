@@ -298,9 +298,10 @@ const depreciationFactScore = (tag: string, description: string) => {
 
   const isPropertySpecific = /realestate|investmentproperty|rentalproperty/.test(compact);
   if (isPropertySpecific && compact.includes("amortiz")) return 150;
-  if (compact.includes("depreciationdepletionandamortization")) return 110;
-  if (compact.includes("scheduleiii") && isPropertySpecific) return 90;
-  return isPropertySpecific ? 70 : 40;
+  if (compact.includes("scheduleiii") && isPropertySpecific) return 120;
+  if (isPropertySpecific) return 110;
+  if (compact.includes("depreciationdepletionandamortization")) return 80;
+  return 40;
 };
 
 const propertySaleGainFactScore = (tag: string, description: string) => {
@@ -349,7 +350,7 @@ const estimateAnnualFfoSeries = (namespaces: Record<string, Record<string, unkno
 
     return {
       value: Number(estimatedFfoPerShare.toFixed(2)),
-      source: propertySaleGain && depreciation.score >= 140 ? "ESTIMATED" : "ESTIMATED_PARTIAL",
+      source: propertySaleGain && depreciation.score >= 110 ? "ESTIMATED" : "ESTIMATED_PARTIAL",
       filed: [netIncome.filed, depreciation.filed, dilutedShares.filed, propertySaleGain?.filed ?? ""].sort().pop() ?? "",
     };
   });
