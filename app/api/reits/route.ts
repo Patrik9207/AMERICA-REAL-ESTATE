@@ -106,17 +106,19 @@ const ANNUAL_YEARS = [2022, 2023, 2024, 2025, 2026] as const;
 type FfoMetricType = "FFO" | "AFFO";
 type AnnualFfoValue = { value: number; source: FfoMetricType; filed: string };
 
-const getNumericSeriesFromFact = (fact: any) => {
+const getNumericSeriesFromFact = (fact: unknown) => {
   if (!fact || typeof fact !== "object") return [];
 
-  const units = fact.units ?? {};
+  const units = (fact as { units?: Record<string, unknown> }).units ?? {};
   const values: number[] = [];
 
   for (const list of Object.values(units)) {
     if (!Array.isArray(list)) continue;
 
     for (const item of list) {
-      const value = toNumber(item?.val ?? item?.value ?? item?.amount ?? item?.unitValue);
+      if (!item || typeof item !== "object") continue;
+      const entry = item as Record<string, unknown>;
+      const value = toNumber(entry.val ?? entry.value ?? entry.amount ?? entry.unitValue);
       if (value === null) continue;
 
       if (value > 0 && value < 1000000000000) {
@@ -128,7 +130,7 @@ const getNumericSeriesFromFact = (fact: any) => {
   return values;
 };
 
-const readLatestValues = (facts: Record<string, any>, keys: string[]) => {
+const readLatestValues = (facts: Record<string, unknown>, keys: string[]) => {
   for (const key of keys) {
     const fact = facts[key];
     if (!fact) continue;
@@ -140,7 +142,7 @@ const readLatestValues = (facts: Record<string, any>, keys: string[]) => {
   return [];
 };
 
-const readAnnualFfoSeries = (namespaces: Record<string, Record<string, any>>) => {
+const readAnnualFfoSeries = (namespaces: Record<string, Record<string, unknown>>) => {
   const annualValues = new Map<number, AnnualFfoValue>();
 
   for (const namespaceFacts of Object.values(namespaces)) {
@@ -149,7 +151,8 @@ const readAnnualFfoSeries = (namespaces: Record<string, Record<string, any>>) =>
     for (const [tag, fact] of Object.entries(namespaceFacts)) {
       if (!fact || typeof fact !== "object") continue;
 
-      const description = `${tag} ${fact.label ?? ""} ${fact.description ?? ""}`
+      const factRecord = fact as Record<string, unknown>;
+      const description = `${tag} ${String(factRecord.label ?? "")} ${String(factRecord.description ?? "")}`
         .replace(/([a-z])([A-Z])/g, "$1 $2")
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, " ");
@@ -165,13 +168,15 @@ const readAnnualFfoSeries = (namespaces: Record<string, Record<string, any>>) =>
           ? "AFFO"
           : "FFO";
 
-      for (const unitValues of Object.values(fact.units ?? {})) {
+      for (const unitValues of Object.values(factRecord.units ?? {})) {
         if (!Array.isArray(unitValues)) continue;
 
         for (const item of unitValues) {
-          const value = toNumber(item?.val);
-          const start = Date.parse(item?.start ?? "");
-          const end = Date.parse(item?.end ?? "");
+          if (!item || typeof item !== "object") continue;
+          const itemRecord = item as Record<string, unknown>;
+          const value = toNumber(itemRecord.val);
+          const start = Date.parse(String(itemRecord.start ?? ""));
+          const end = Date.parse(String(itemRecord.end ?? ""));
           if (value === null || Math.abs(value) > 1000 || !Number.isFinite(start) || !Number.isFinite(end)) continue;
 
           const durationDays = (end - start) / 86400000 + 1;
@@ -199,12 +204,12 @@ const readAnnualFfoSeries = (namespaces: Record<string, Record<string, any>>) =>
   return ANNUAL_YEARS.map((year) => annualValues.get(year) ?? null);
 };
 
-const readLatestValue = (facts: Record<string, any>, keys: string[]) => {
+const readLatestValue = (facts: Record<string, unknown>, keys: string[]) => {
   const values = readLatestValues(facts, keys);
   return values.length ? values[values.length - 1] : null;
 };
 
-const readLatestOccupancy = (namespaces: Record<string, Record<string, any>>) => {
+const readLatestOccupancy = (namespaces: Record<string, Record<string, unknown>>) => {
   let latest: { value: number; date: string } | null = null;
 
   for (const namespaceFacts of Object.values(namespaces)) {
@@ -213,24 +218,27 @@ const readLatestOccupancy = (namespaces: Record<string, Record<string, any>>) =>
     for (const [tag, fact] of Object.entries(namespaceFacts)) {
       if (!fact || typeof fact !== "object") continue;
 
-      const description = `${tag} ${fact.label ?? ""} ${fact.description ?? ""}`
+      const factRecord = fact as Record<string, unknown>;
+      const description = `${tag} ${String(factRecord.label ?? "")} ${String(factRecord.description ?? "")}`
         .replace(/([a-z])([A-Z])/g, "$1 $2")
         .toLowerCase();
       const isOccupancy = /(occupancy|average.*occupancy|occupied|physical.*occupancy|economic.*occupancy|space.*utilization|utilization.*space|percent(?:age)?.*leased|leased.*percent(?:age)?)/.test(description);
       const isVacancy = /(vacancy|vacant|percent(?:age)?.*(?:vacant|unleased)|(?:vacant|unleased).*percent(?:age)?)/.test(description);
       if (!isOccupancy && !isVacancy) continue;
 
-      for (const [unit, values] of Object.entries(fact.units ?? {})) {
+      for (const [unit, values] of Object.entries(factRecord.units ?? {})) {
         if (!Array.isArray(values)) continue;
         if (unit !== "pure" && !unit.includes("%")) continue;
 
         for (const item of values) {
-          const rawValue = toNumber(item?.val);
+          if (!item || typeof item !== "object") continue;
+          const itemRecord = item as Record<string, unknown>;
+          const rawValue = toNumber(itemRecord.val);
           if (rawValue === null || rawValue < 0 || rawValue > 100) continue;
 
           const percentage = rawValue <= 1 ? rawValue * 100 : rawValue;
           const value = isVacancy ? 100 - percentage : percentage;
-          const date = String(item?.filed ?? item?.end ?? "");
+          const date = String(itemRecord.filed ?? itemRecord.end ?? "");
           if (!latest || date > latest.date) latest = { value: Number(value.toFixed(1)), date };
         }
       }
@@ -276,123 +284,7 @@ const readReportPercentage = (text: string, isVacancy: boolean, allowPlainNumber
   return null;
 };
 
-const readOccupancyFromReport = (html: string) => {
-  const tablePattern = /<table\b[^>]*>[\s\S]*?<\/table>/gi;
-
-  for (const [table] of html.matchAll(tablePattern)) {
-    const rows = [...table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
-      .map((match) => match[1]);
-    const cellsByRow = rows.map((row) =>
-      [...row.matchAll(/<(?:td|th)\b[^>]*>([\s\S]*?)<\/(?:td|th)>/gi)]
-        .map((match) => cleanReportText(match[1])),
-    );
-
-    for (let rowIndex = 0; rowIndex < cellsByRow.length; rowIndex += 1) {
-      const cells = cellsByRow[rowIndex];
-      const metricColumns = cells.flatMap((cell, columnIndex) =>
-        OCCUPANCY_TERMS.test(cell) || VACANCY_TERMS.test(cell)
-          ? [{ columnIndex, isVacancy: VACANCY_TERMS.test(cell) }]
-          : [],
-      );
-
-      for (const { columnIndex, isVacancy } of metricColumns) {
-        for (let dataRowIndex = rowIndex + 1; dataRowIndex < cellsByRow.length; dataRowIndex += 1) {
-          const value = cellsByRow[dataRowIndex][columnIndex];
-          if (value === undefined) continue;
-          const occupancy = readReportPercentage(value, isVacancy, true);
-          if (occupancy !== null) return occupancy;
-        }
-      }
-    }
-  }
-
-  for (const row of html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
-    const rowText = cleanReportText(row[1]);
-    const occupancyIndex = rowText.search(OCCUPANCY_TERMS);
-    const vacancyIndex = rowText.search(VACANCY_TERMS);
-    if (occupancyIndex < 0 && vacancyIndex < 0) continue;
-
-    const isVacancy = vacancyIndex >= 0 && (occupancyIndex < 0 || vacancyIndex < occupancyIndex);
-    const value = readReportPercentage(rowText, isVacancy);
-    if (value !== null) return value;
-  }
-
-  const reportText = cleanReportText(html);
-  const metricContextPattern = /(?:occupancy|occupied|space utilization|utilization of (?:leased )?space|percent(?:age)?(?: of)? (?:space )?leased|(?:leased|leasable) percent(?:age)?|vacancy|vacant|unleased)[^.!?]{0,180}/gi;
-
-  for (const match of reportText.matchAll(metricContextPattern)) {
-    const context = match[0];
-    const occupancyIndex = context.search(OCCUPANCY_TERMS);
-    const vacancyIndex = context.search(VACANCY_TERMS);
-    const isVacancy = vacancyIndex >= 0 && (occupancyIndex < 0 || vacancyIndex < occupancyIndex);
-    const value = readReportPercentage(context, isVacancy);
-    if (value !== null) return value;
-  }
-
-  return null;
-};
-
-async function fetchLatestFilingOccupancy(cik: string) {
-  return withSecRequestLimit(async () => {
-    try {
-      const submissionsResponse = await fetch(
-        `https://data.sec.gov/submissions/CIK${cik.padStart(10, "0")}.json`,
-        {
-          headers: SEC_HEADERS,
-          next: { revalidate: DATA_CACHE_SECONDS },
-          signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-        },
-      );
-      if (!submissionsResponse.ok) return null;
-
-      const submissions = await submissionsResponse.json();
-      const recent = submissions?.filings?.recent;
-      const forms = Array.isArray(recent?.form) ? recent.form : [];
-      const filingDates = Array.isArray(recent?.filingDate) ? recent.filingDate : [];
-      const accessions = Array.isArray(recent?.accessionNumber) ? recent.accessionNumber : [];
-      const documents = Array.isArray(recent?.primaryDocument) ? recent.primaryDocument : [];
-      const filings = forms.flatMap((form: unknown, index: number) => {
-        const normalizedForm = String(form);
-        const document = String(documents[index] ?? "");
-        if (!/^(10-Q|10-K)(\/A)?$/.test(normalizedForm) || !/\.html?$/i.test(document) || document.includes("..")) {
-          return [];
-        }
-
-        return [{
-          filingDate: String(filingDates[index] ?? ""),
-          accession: String(accessions[index] ?? "").replace(/-/g, ""),
-          document,
-        }];
-      }).sort((left: { filingDate: string }, right: { filingDate: string }) =>
-        right.filingDate.localeCompare(left.filingDate),
-      ).slice(0, 3);
-
-      const cikPath = String(Number(cik));
-      for (const filing of filings) {
-        if (!filing.accession || !filing.document) continue;
-        const url = `https://www.sec.gov/Archives/edgar/data/${cikPath}/${filing.accession}/${filing.document
-          .split("/")
-          .map(encodeURIComponent)
-          .join("/")}`;
-        const reportResponse = await fetch(url, {
-          headers: { ...SEC_HEADERS, Accept: "text/html,application/xhtml+xml" },
-          next: { revalidate: DATA_CACHE_SECONDS },
-          signal: AbortSignal.timeout(10000),
-        });
-        if (!reportResponse.ok) continue;
-
-        const occupancy = readOccupancyFromReport(await reportResponse.text());
-        if (occupancy !== null) return occupancy;
-      }
-    } catch {
-      return null;
-    }
-
-    return null;
-  });
-}
-
-const readLatestRatio = (facts: Record<string, any>, numeratorKeys: string[], denominatorKeys: string[]) => {
+const readLatestRatio = (facts: Record<string, unknown>, numeratorKeys: string[], denominatorKeys: string[]) => {
   const numeratorSeries = readLatestValues(facts, numeratorKeys);
   const denominatorSeries = readLatestValues(facts, denominatorKeys);
 
