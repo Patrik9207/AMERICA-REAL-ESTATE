@@ -326,10 +326,10 @@ const estimateAnnualFfoSeries = (namespaces: Record<string, Record<string, unkno
       namespaces,
       year,
       (unit) => unit.toLowerCase() === "shares",
-      (tag, description) => {
-        const compact = `${tag} ${description}`.replace(/[^a-z0-9]/g, "");
-        if (!compact.includes("weightedaverage") || !compact.includes("sharesoutstanding") ||
-          !compact.includes("diluted") || compact.includes("per")) {
+      (tag) => {
+        const compactTag = tag.replace(/[^a-z0-9]/g, "");
+        if (!compactTag.includes("weightedaverage") || !compactTag.includes("sharesoutstanding") ||
+          !compactTag.includes("diluted") || compactTag.includes("pershare")) {
           return 0;
         }
         return 100;
