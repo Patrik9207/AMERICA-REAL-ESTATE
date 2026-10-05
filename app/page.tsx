@@ -68,7 +68,8 @@ function Page() {
   const [selectedSector, setSelectedSector] = useState("Todos");
   const [sortKey, setSortKey] = useState<SortKey>("symbol");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -88,8 +89,12 @@ function Page() {
 
         const marketRows: ReitRow[] = await response.json();
         setRows(marketRows);
+        setLoadError(null);
       } catch {
         setRows([]);
+        setLoadError("Não foi possível carregar os dados de mercado. Tente novamente mais tarde.");
+      } finally {
+        setLoading(false);
       }
 
       try {
@@ -276,6 +281,10 @@ function Page() {
 
           {loading ? (
             <div className="py-10 text-center text-sm text-[#a0a79d]">Carregando dados públicos...</div>
+          ) : loadError ? (
+            <div className="py-10 text-center text-sm text-[#f0a39b]" role="alert">{loadError}</div>
+          ) : rows.length === 0 ? (
+            <div className="py-10 text-center text-sm text-[#a0a79d]">Nenhum REIT disponível no momento.</div>
           ) : (
             <>
               <p className="mb-3 text-xs leading-relaxed text-[#92978f]">
