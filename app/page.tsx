@@ -24,6 +24,7 @@ type ReitRow = {
   debtToAssets: number | null;
   change: number | null;
   ffoAnnual: Array<number | null>;
+  ffoTypeAnnual?: Array<string | null>;
   ffoLatest: number | null;
 };
 
@@ -36,6 +37,14 @@ function averageMetric(values: Array<number | null>) {
   const available = values.filter((value): value is number => value !== null && Number.isFinite(value));
   if (!available.length) return null;
   return available.reduce((sum, value) => sum + value, 0) / available.length;
+}
+
+function ffoSourceLabel(source: string | null | undefined) {
+  if (source === "ESTIMATED") return "Estimativa SEC com D&A imobiliário e ajuste por ganhos de venda identificados";
+  if (source === "ESTIMATED_PARTIAL") return "Estimativa SEC parcial: D&A agregado ou ganhos de venda não identificados";
+  if (source === "AFFO") return "AFFO reportado pela empresa (usado como fallback)";
+  if (source === "FFO") return "FFO reportado pela empresa (usado como fallback)";
+  return "Estimativa não disponível";
 }
 
 const annualYears = [2022, 2023, 2024, 2025, 2026];
@@ -87,7 +96,7 @@ function Page() {
         const fundamentalsResponse = await fetch("/api/reits?fundamentals=1");
         if (!fundamentalsResponse.ok) return;
 
-        const fundamentalsRows: Array<Pick<ReitRow, "symbol" | "occupancy" | "debtToAssets" | "ffoAnnual">> =
+        const fundamentalsRows: Array<Pick<ReitRow, "symbol" | "occupancy" | "debtToAssets" | "ffoAnnual" | "ffoTypeAnnual">> =
           await fundamentalsResponse.json();
         const fundamentalsBySymbol = new Map<string, Partial<ReitRow>>();
 
@@ -167,7 +176,8 @@ function Page() {
       };
 
       annualYears.forEach((year) => {
-        row[`FFO/Ação ${year}`] = reit.ffoAnnual[year - 2022] ?? null;
+        row[`FFO/Ação est. ${year}`] = reit.ffoAnnual[year - 2022] ?? null;
+        row[`Fonte FFO/Ação ${year}`] = ffoSourceLabel(reit.ffoTypeAnnual?.[year - 2022]);
         row[`Dividendos/Ação ${year}`] = reit.dividendAnnual[year - 2022] ?? null;
       });
 
@@ -267,8 +277,12 @@ function Page() {
           {loading ? (
             <div className="py-10 text-center text-sm text-[#a0a79d]">Carregando dados públicos...</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-separate border-spacing-y-2 text-left">
+            <>
+              <p className="mb-3 text-xs leading-relaxed text-[#92978f]">
+                FFO/Ação estimado com dados SEC: lucro líquido + depreciação/amortização − ganhos identificados na venda de imóveis, dividido pela média anual de ações diluídas. Quando a SEC não fornece depreciação imobiliária específica ou ganho de venda identificável, o valor é marcado como estimativa parcial. FFO/AFFO reportado pela empresa é usado somente se faltarem componentes para o cálculo.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-separate border-spacing-y-2 text-left">
                 <thead>
                   <tr className="text-xs uppercase tracking-[0.14em] text-[#92978f]">
                     {(["symbol", "sector", "price", "marketValue", "liquidityAverage", "dividendYield", "occupancy", "debtToAssets"] as SortKey[]).map((key, index) => {
@@ -286,7 +300,7 @@ function Page() {
                     {annualYears.map((year) => (
                       <th key={year} className="pb-2 px-3 font-medium">
                         <button type="button" onClick={() => toggleSort(`ffo-${year - 2022}`)} className="inline-flex items-center gap-1 whitespace-nowrap">
-                          FFO/Ação {year}
+                          FFO/Ação est. {year}
                           <span aria-hidden="true">{sortKey === `ffo-${year - 2022}` ? (sortDirection === "asc" ? "↑" : "↓") : "↕"}</span>
                         </button>
                       </th>
@@ -319,7 +333,9 @@ function Page() {
 
                         return (
                           <td key={`${reit.symbol}-${year}`} className="border-y border-[#2b3027] px-3 py-3 text-center">
-                            {value === null || value === undefined ? "N/D" : `$${value.toFixed(2)}`}
+                            <span title={ffoSourceLabel(reit.ffoTypeAnnual?.[year - 2022])}>
+                              {value === null || value === undefined ? "N/D" : `$${value.toFixed(2)}`}
+                            </span>
                           </td>
                         );
                       })}
@@ -335,8 +351,9 @@ function Page() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
-            </div>
+                </table>
+              </div>
+            </>
           )}
         </section>
       </div>

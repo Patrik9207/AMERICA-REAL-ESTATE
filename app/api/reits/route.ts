@@ -49,7 +49,7 @@ const REITS = {
   KIM: { cik: "0000879101", sector: "Retail", name: "Kimco Realty" },
   MAA: { cik: "0000912598", sector: "Residential", name: "Mid-America Apartment" },
   NNN: { cik: "0000020218", sector: "Retail", name: "NNN Realty" },
-  O: { cik: "0000745422", sector: "Diversified", name: "Realty Income" },
+  O: { cik: "0000726728", sector: "Diversified", name: "Realty Income" },
   OHI: { cik: "0001577043", sector: "Healthcare", name: "Omega Healthcare" },
   PLD: { cik: "0001093557", sector: "Industrial", name: "Prologis" },
   PSA: { cik: "0001393311", sector: "Self Storage", name: "Public Storage" },
@@ -103,8 +103,9 @@ const toNumber = (value: unknown) => {
 };
 
 const ANNUAL_YEARS = [2022, 2023, 2024, 2025, 2026] as const;
-type FfoMetricType = "FFO" | "AFFO";
+type FfoMetricType = "FFO" | "AFFO" | "ESTIMATED" | "ESTIMATED_PARTIAL";
 type AnnualFfoValue = { value: number; source: FfoMetricType; filed: string };
+type AnnualFactValue = { value: number; filed: string };
 
 const getNumericSeriesFromFact = (fact: unknown) => {
   if (!fact || typeof fact !== "object") return [];
@@ -204,6 +205,155 @@ const readAnnualFfoSeries = (namespaces: Record<string, Record<string, unknown>>
   return ANNUAL_YEARS.map((year) => annualValues.get(year) ?? null);
 };
 
+const getFactDescription = (tag: string, fact: Record<string, unknown>) =>
+  `${tag} ${String(fact.label ?? "")} ${String(fact.description ?? "")}`
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+
+const readAnnualFactValue = (
+  fact: Record<string, unknown>,
+  year: number,
+  isTargetUnit: (unit: string) => boolean,
+): AnnualFactValue | null => {
+  const units = fact.units;
+  if (!units || typeof units !== "object") return null;
+
+  let latest: AnnualFactValue | null = null;
+  for (const [unit, rawValues] of Object.entries(units)) {
+    if (!isTargetUnit(unit) || !Array.isArray(rawValues)) continue;
+
+    for (const rawItem of rawValues) {
+      if (!rawItem || typeof rawItem !== "object") continue;
+      const item = rawItem as Record<string, unknown>;
+      const value = toNumber(item.val);
+      const start = Date.parse(String(item.start ?? ""));
+      const end = Date.parse(String(item.end ?? ""));
+      if (value === null || !Number.isFinite(start) || !Number.isFinite(end)) continue;
+
+      const durationDays = (end - start) / 86400000 + 1;
+      if (durationDays < 300 || durationDays > 400 || new Date(end).getUTCFullYear() !== year) continue;
+
+      const form = String(item.form ?? "");
+      if (!/^(10-K|20-F|40-F)(\/A)?$/.test(form) && item.fp !== "FY") continue;
+
+      const filed = String(item.filed ?? "");
+      if (!latest || filed > latest.filed) latest = { value, filed };
+    }
+  }
+
+  return latest;
+};
+
+const selectAnnualFactValue = (
+  namespaces: Record<string, Record<string, unknown>>,
+  year: number,
+  isTargetUnit: (unit: string) => boolean,
+  scoreFact: (tag: string, description: string) => number,
+) => {
+  let best: (AnnualFactValue & { score: number }) | null = null;
+
+  for (const namespaceFacts of Object.values(namespaces)) {
+    if (!namespaceFacts || typeof namespaceFacts !== "object") continue;
+
+    for (const [tag, rawFact] of Object.entries(namespaceFacts)) {
+      if (!rawFact || typeof rawFact !== "object") continue;
+      const fact = rawFact as Record<string, unknown>;
+      const description = getFactDescription(tag, fact);
+      const score = scoreFact(tag.toLowerCase(), description);
+      if (score <= 0) continue;
+
+      const annualValue = readAnnualFactValue(fact, year, isTargetUnit);
+      if (!annualValue) continue;
+      if (!best || score > best.score || (score === best.score && annualValue.filed > best.filed)) {
+        best = { ...annualValue, score };
+      }
+    }
+  }
+
+  return best;
+};
+
+const incomeFactScore = (tag: string, description: string) => {
+  const compact = `${tag} ${description}`.replace(/[^a-z0-9]/g, "");
+  if (!/(netincomeloss|profitloss)/.test(compact) ||
+    /per(?:basic|diluted)?share|earningspershare|noncontrollinginterest|comprehensiveincome/.test(compact)) {
+    return 0;
+  }
+
+  if (compact.includes("netincomelossavailabletocommonstockholdersdiluted")) return 130;
+  if (compact.includes("netincomelossavailabletocommonstockholdersbasic")) return 120;
+  if (compact.includes("netincomelossattributabletoparent")) return 110;
+  if (compact.includes("netincomeloss")) return 100;
+  if (compact.includes("profitloss")) return 80;
+  return 0;
+};
+
+const depreciationFactScore = (tag: string, description: string) => {
+  const compact = `${tag} ${description}`.replace(/[^a-z0-9]/g, "");
+  if (!compact.includes("depreciat") ||
+    /accumulated|disposed|sold|impairment|financingcost|debtissuance/.test(compact)) {
+    return 0;
+  }
+
+  const isPropertySpecific = /realestate|investmentproperty|rentalproperty/.test(compact);
+  if (isPropertySpecific && compact.includes("amortiz")) return 150;
+  if (compact.includes("depreciationdepletionandamortization")) return 110;
+  if (compact.includes("scheduleiii") && isPropertySpecific) return 90;
+  return isPropertySpecific ? 70 : 40;
+};
+
+const propertySaleGainFactScore = (tag: string, description: string) => {
+  const compact = `${tag} ${description}`.replace(/[^a-z0-9]/g, "");
+  if (!/(gain|loss)/.test(compact) || !/(sale|disposition)/.test(compact) ||
+    !/(realestate|investmentproperty|properties|property)/.test(compact) ||
+    /securities|derivative|foreigncurrency|debtinstrument/.test(compact)) {
+    return 0;
+  }
+
+  if (compact.includes("realestate") || compact.includes("investmentproperty")) return 120;
+  if (compact.includes("saleofproperties")) return 110;
+  if (compact.includes("propertyplantandequipment")) return 50;
+  return 80;
+};
+
+const estimateAnnualFfoSeries = (namespaces: Record<string, Record<string, unknown>>) =>
+  ANNUAL_YEARS.map((year): AnnualFfoValue | null => {
+    const netIncome = selectAnnualFactValue(namespaces, year, (unit) => unit === "USD", incomeFactScore);
+    const depreciation = selectAnnualFactValue(namespaces, year, (unit) => unit === "USD", depreciationFactScore);
+    const dilutedShares = selectAnnualFactValue(
+      namespaces,
+      year,
+      (unit) => unit.toLowerCase() === "shares",
+      (tag, description) => {
+        const compact = `${tag} ${description}`.replace(/[^a-z0-9]/g, "");
+        if (!compact.includes("weightedaverage") || !compact.includes("sharesoutstanding") ||
+          !compact.includes("diluted") || compact.includes("per")) {
+          return 0;
+        }
+        return 100;
+      },
+    );
+
+    if (!netIncome || !depreciation || !dilutedShares || dilutedShares.value <= 0) return null;
+
+    const propertySaleGain = selectAnnualFactValue(
+      namespaces,
+      year,
+      (unit) => unit === "USD",
+      propertySaleGainFactScore,
+    );
+    const estimatedFfoPerShare =
+      (netIncome.value + depreciation.value - (propertySaleGain?.value ?? 0)) / dilutedShares.value;
+    if (!Number.isFinite(estimatedFfoPerShare)) return null;
+
+    return {
+      value: Number(estimatedFfoPerShare.toFixed(2)),
+      source: propertySaleGain && depreciation.score >= 140 ? "ESTIMATED" : "ESTIMATED_PARTIAL",
+      filed: [netIncome.filed, depreciation.filed, dilutedShares.filed, propertySaleGain?.filed ?? ""].sort().pop() ?? "",
+    };
+  });
+
 const readLatestValue = (facts: Record<string, unknown>, keys: string[]) => {
   const values = readLatestValues(facts, keys);
   return values.length ? values[values.length - 1] : null;
@@ -282,7 +432,9 @@ async function fetchSecFacts(cik: string) {
       const facts = data?.facts?.["us-gaap"] ?? {};
       const deiFacts = data?.facts?.dei ?? {};
 
-      const ffoSeries = readAnnualFfoSeries(data?.facts ?? {});
+      const reportedFfoSeries = readAnnualFfoSeries(data?.facts ?? {});
+      const estimatedFfoSeries = estimateAnnualFfoSeries(data?.facts ?? {});
+      const ffoSeries = estimatedFfoSeries.map((estimate, index) => estimate ?? reportedFfoSeries[index]);
 
       const occupancy = readLatestOccupancy(data?.facts ?? {});
 
