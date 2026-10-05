@@ -291,17 +291,19 @@ const incomeFactScore = (tag: string, description: string) => {
 
 const depreciationFactScore = (tag: string, description: string) => {
   const compact = `${tag} ${description}`.replace(/[^a-z0-9]/g, "");
-  if (!compact.includes("depreciat") ||
-    /accumulated|disposed|sold|impairment|financingcost|debtissuance/.test(compact)) {
+  const hasDepreciationAlias = /depreciat|depletion|amortiz|wearandtear/.test(compact);
+  if (!hasDepreciationAlias ||
+    /accumulated|disposed|sold|impairment|financingcost|debtissuance|debtdiscount|debtpremium/.test(compact)) {
     return 0;
   }
 
-  const isPropertySpecific = /realestate|investmentproperty|rentalproperty/.test(compact);
-  if (isPropertySpecific && compact.includes("amortiz")) return 150;
-  if (compact.includes("scheduleiii") && isPropertySpecific) return 120;
+  const isRealEstateSpecific = /realestate|investmentproperty|rentalproperty/.test(compact);
+  const isPropertySpecific = /property|building|leasehold/.test(compact);
+  if (isRealEstateSpecific && compact.includes("scheduleiii")) return 150;
+  if (isRealEstateSpecific) return 140;
   if (isPropertySpecific) return 110;
-  if (compact.includes("depreciationdepletionandamortization")) return 80;
-  return 40;
+  if (/depreciationdepletionandamortization|depreciationandamortization/.test(compact)) return 85;
+  return 45;
 };
 
 const propertySaleGainFactScore = (tag: string, description: string) => {
@@ -337,6 +339,9 @@ const estimateAnnualFfoSeries = (namespaces: Record<string, Record<string, unkno
     );
 
     if (!netIncome || !depreciation || !dilutedShares || dilutedShares.value <= 0) return null;
+    if (depreciation.score < 100 && Math.abs(depreciation.value) < Math.abs(netIncome.value) * 0.1) {
+      return null;
+    }
 
     const propertySaleGain = selectAnnualFactValue(
       namespaces,
