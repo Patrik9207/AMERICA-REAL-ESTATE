@@ -40,204 +40,6 @@ function averageMetric(values: Array<number | null>) {
 
 const annualYears = [2022, 2023, 2024, 2025, 2026];
 
-const spreadsheetRows: ReitRow[] = [
-  {
-    symbol: "VICI",
-    name: "Vici Properties",
-    sector: "Entertainment",
-    price: 23.73,
-    marketValue: 22003000000,
-    liquidityAverage: 2940000,
-    dividendYield: 6.38,
-    dividendAnnual: [0.61, 0.68, 0.74, 0.78, 0.82],
-    occupancy: 92.4,
-    debtToAssets: 41.5,
-    change: 1.18,
-    ffoAnnual: [1.17, 1.29, 1.34, 1.4, 1.46],
-    ffoLatest: 1.46,
-  },
-  {
-    symbol: "AAT",
-    name: "American Assets Trust",
-    sector: "Office",
-    price: 11.31,
-    marketValue: 1890000000,
-    liquidityAverage: 740000,
-    dividendYield: 6.33,
-    dividendAnnual: [0.62, 0.72, 0.75, 0.79, 0.83],
-    occupancy: 89.3,
-    debtToAssets: 37.8,
-    change: 0.82,
-    ffoAnnual: [0.72, 0.79, 0.84, 0.9, 0.96],
-    ffoLatest: 0.96,
-  },
-  {
-    symbol: "CUBE",
-    name: "CubeSmart",
-    sector: "Self Storage",
-    price: 54.13,
-    marketValue: 14800000000,
-    liquidityAverage: 2230000,
-    dividendYield: 3.74,
-    dividendAnnual: [1.41, 1.49, 1.57, 1.7, 1.75],
-    occupancy: 94.8,
-    debtToAssets: 33.6,
-    change: 1.24,
-    ffoAnnual: [2.41, 2.54, 2.66, 2.81, 2.93],
-    ffoLatest: 2.93,
-  },
-  {
-    symbol: "KIM",
-    name: "Kimco Realty",
-    sector: "Retail",
-    price: 20.85,
-    marketValue: 13600000000,
-    liquidityAverage: 2800000,
-    dividendYield: 4.65,
-    dividendAnnual: [0.98, 1.06, 1.13, 1.19, 1.25],
-    occupancy: 92.2,
-    debtToAssets: 38.9,
-    change: 0.98,
-    ffoAnnual: [1.08, 1.18, 1.26, 1.34, 1.4],
-    ffoLatest: 1.4,
-  },
-  {
-    symbol: "SPG",
-    name: "Simon Property Group",
-    sector: "Retail",
-    price: 154.2,
-    marketValue: 47600000000,
-    liquidityAverage: 1340000,
-    dividendYield: 4.85,
-    dividendAnnual: [7.6, 8.1, 8.4, 8.8, 9.2],
-    occupancy: 95.4,
-    debtToAssets: 34.7,
-    change: 1.47,
-    ffoAnnual: [7.6, 7.9, 8.2, 8.5, 8.8],
-    ffoLatest: 8.8,
-  },
-  {
-    symbol: "NNN",
-    name: "NNN REIT",
-    sector: "Retail",
-    price: 41.26,
-    marketValue: 9230000000,
-    liquidityAverage: 1100000,
-    dividendYield: 5.48,
-    dividendAnnual: [2.1, 2.21, 2.28, 2.38, 2.5],
-    occupancy: 94.5,
-    debtToAssets: 31.2,
-    change: 0.76,
-    ffoAnnual: [2.12, 2.25, 2.33, 2.42, 2.49],
-    ffoLatest: 2.49,
-  },
-  {
-    symbol: "O",
-    name: "Realty Income",
-    sector: "Diversified",
-    price: 59.9,
-    marketValue: 48100000000,
-    liquidityAverage: 2600000,
-    dividendYield: 5.69,
-    dividendAnnual: [2.39, 2.52, 2.66, 2.78, 2.9],
-    occupancy: 91.7,
-    debtToAssets: 42.2,
-    change: 0.62,
-    ffoAnnual: [1.87, 2.05, 2.11, 2.17, 2.23],
-    ffoLatest: 2.23,
-  },
-  {
-    symbol: "PLD",
-    name: "Prologis",
-    sector: "Industrial",
-    price: 110.41,
-    marketValue: 106000000000,
-    liquidityAverage: 3280000,
-    dividendYield: 3.15,
-    dividendAnnual: [3.4, 3.56, 3.72, 3.9, 4.08],
-    occupancy: 96.4,
-    debtToAssets: 35.2,
-    change: 1.38,
-    ffoAnnual: [4.53, 4.86, 5.12, 5.38, 5.6],
-    ffoLatest: 5.6,
-  },
-  {
-    symbol: "EQIX",
-    name: "Equinix",
-    sector: "Data Centers",
-    price: 787.12,
-    marketValue: 77400000000,
-    liquidityAverage: 480000,
-    dividendYield: 1.84,
-    dividendAnnual: [9.4, 10.2, 11.1, 12.1, 12.8],
-    occupancy: 94.1,
-    debtToAssets: 28.3,
-    change: 1.4,
-    ffoAnnual: [12.8, 13.7, 14.6, 15.2, 15.9],
-    ffoLatest: 15.9,
-  },
-  {
-    symbol: "WELL",
-    name: "Welltower",
-    sector: "Healthcare",
-    price: 121.5,
-    marketValue: 86100000000,
-    liquidityAverage: 1700000,
-    dividendYield: 0.92,
-    dividendAnnual: [2.02, 2.09, 2.2, 2.37, 2.52],
-    occupancy: 91.9,
-    debtToAssets: 47.2,
-    change: 0.55,
-    ffoAnnual: [3.1, 3.24, 3.38, 3.52, 3.68],
-    ffoLatest: 3.68,
-  },
-  {
-    symbol: "MAA",
-    name: "Mid-America Apartment",
-    sector: "Residential",
-    price: 164.5,
-    marketValue: 18800000000,
-    liquidityAverage: 760000,
-    dividendYield: 3.82,
-    dividendAnnual: [5.2, 5.48, 5.9, 6.22, 6.42],
-    occupancy: 95.8,
-    debtToAssets: 39.5,
-    change: 0.92,
-    ffoAnnual: [5.8, 6.04, 6.31, 6.7, 7.1],
-    ffoLatest: 7.1,
-  },
-  {
-    symbol: "REG",
-    name: "Regency Centers",
-    sector: "Retail",
-    price: 63.19,
-    marketValue: 12600000000,
-    liquidityAverage: 880000,
-    dividendYield: 4.2,
-    dividendAnnual: [2.38, 2.52, 2.66, 2.84, 3.02],
-    occupancy: 94.4,
-    debtToAssets: 35.9,
-    change: 0.54,
-    ffoAnnual: [2.02, 2.18, 2.34, 2.47, 2.62],
-    ffoLatest: 2.62,
-  },
-  {
-    symbol: "AMT",
-    name: "American Tower",
-    sector: "Cell Towers",
-    price: 205.9,
-    marketValue: 95500000000,
-    liquidityAverage: 1220000,
-    dividendYield: 2.56,
-    dividendAnnual: [6.5, 7.14, 7.72, 8.15, 8.68],
-    occupancy: 92.6,
-    debtToAssets: 44.7,
-    change: 0.66,
-    ffoAnnual: [7.42, 8.03, 8.6, 9.2, 9.78],
-    ffoLatest: 9.78,
-  },
-];
-
 type SortKey =
   | "symbol"
   | "sector"
@@ -253,7 +55,7 @@ type SortKey =
 type SortDirection = "asc" | "desc";
 
 function Page() {
-  const [rows, setRows] = useState<ReitRow[]>(spreadsheetRows);
+  const [rows, setRows] = useState<ReitRow[]>([]);
   const [selectedSector, setSelectedSector] = useState("Todos");
   const [sortKey, setSortKey] = useState<SortKey>("symbol");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -276,21 +78,9 @@ function Page() {
         if (!response.ok) throw new Error("Não foi possível carregar os dados de mercado.");
 
         const marketRows: ReitRow[] = await response.json();
-        const mergedRows = [...spreadsheetRows];
-
-        marketRows.forEach((marketRow) => {
-          const existingIndex = mergedRows.findIndex((item) => item.symbol === marketRow.symbol);
-          if (existingIndex >= 0) {
-            mergedRows[existingIndex] = { ...mergedRows[existingIndex], ...marketRow };
-            return;
-          }
-
-          mergedRows.push(marketRow);
-        });
-
-        setRows(mergedRows);
+        setRows(marketRows);
       } catch {
-        setRows(spreadsheetRows);
+        setRows([]);
       }
 
       try {

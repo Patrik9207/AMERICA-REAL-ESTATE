@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 86400;
+export const revalidate = 172800;
 
-const DATA_CACHE_SECONDS = 86400;
+const DATA_CACHE_SECONDS = 172800;
 const SEC_MAX_CONCURRENT_REQUESTS = 4;
 let activeSecRequests = 0;
 const pendingSecRequests: Array<() => void> = [];
@@ -246,42 +246,6 @@ const readLatestOccupancy = (namespaces: Record<string, Record<string, unknown>>
   }
 
   return latest?.value ?? null;
-};
-
-const OCCUPANCY_TERMS = /occupancy|occupied|space utilization|utilization of (?:leased )?space|percent(?:age)?(?: of)? (?:space )?leased|(?:leased|leasable) percent(?:age)?/i;
-const VACANCY_TERMS = /vacancy|vacant|unleased/i;
-
-const cleanReportText = (html: string) =>
-  html
-    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;|&#160;|&#xA0;/gi, " ")
-    .replace(/&#37;|&percnt;/gi, "%")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const normalizeOccupancy = (value: number, isVacancy: boolean, isFraction = false) => {
-  const percentage = isFraction || value <= 1 ? value * 100 : value;
-  if (percentage < 0 || percentage > 100) return null;
-  return Number((isVacancy ? 100 - percentage : percentage).toFixed(1));
-};
-
-const readReportPercentage = (text: string, isVacancy: boolean, allowPlainNumber = false) => {
-  const cleaned = cleanReportText(text);
-  const explicitPercentage = cleaned.match(/(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b)/i);
-  if (explicitPercentage) {
-    return normalizeOccupancy(Number(explicitPercentage[1]), isVacancy);
-  }
-
-  if (allowPlainNumber && /^\d{1,3}(?:\.\d+)?$/.test(cleaned)) {
-    const value = Number(cleaned);
-    return normalizeOccupancy(value, isVacancy, value <= 1);
-  }
-
-  return null;
 };
 
 const readLatestRatio = (facts: Record<string, unknown>, numeratorKeys: string[], denominatorKeys: string[]) => {
